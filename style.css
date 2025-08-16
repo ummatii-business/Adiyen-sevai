@@ -1,0 +1,81 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg, #ffecd2, #fcb69f);
+  color: #333;
+  text-align: center;
+}
+
+header {
+  padding: 1.5rem;
+  background: #fff3e6;
+  border-bottom: 2px solid #f39c12;
+}
+
+h1, h2 {
+  margin: 0.5rem 0;
+  color: #d35400;
+}
+
+main {
+  padding: 2rem;
+}
+
+.btn-container {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+
+.btn {
+  display: inline-block;
+  padding: 15px 25px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  text-decoration: none;
+  color: #fff;
+  transition: 0.3s;
+}
+
+.btn-donor {
+  background-color: #27ae60;
+}
+.btn-donor:hover {
+  background-color: #219150;
+}
+
+.btn-recipient {
+  background-color: #e74c3c;
+}
+.btn-recipient:hover {
+  background-color: #c0392b;
+}
+
+form {
+  max-width: 400px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+input, textarea {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+button {
+  cursor: pointer;
+}
+
+footer {
+  margin-top: 2rem;
+  padding: 1rem;
+  font-size: 0.9rem;
+  background: #fff3e6;
+}
