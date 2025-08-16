@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adiyen Sevai - Community Food Sharing</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Feather Icons -->
+  <script src="https://unpkg.com/feather-icons"></script>
+</head>
+<body>
+  <header>
+    <h1>🙏 Adiyen Sevai</h1>
+    <p>Food Sharing Platform for Tamil Nadu</p>
+  </header>
+
+  <main>
+    <section id="intro">
+      <h2>Welcome | வரவேற்கிறோம்</h2>
+      <p>Share food with love, reach homes in need near you.</p>
+    </section>
+
+    <section id="options">
+      <div class="card">
+        <h3>I Need Food | எனக்கு உணவு தேவை</h3>
+        <p>Register your home & location</p>
+        <button onclick="navigateTo('need.html')">
+          Register <i data-feather="home"></i>
+        </button>
+      </div>
+      
+      <div class="card">
+        <h3>I Want to Share Food | நான் உணவு பகிர விரும்புகிறேன்</h3>
+        <p>Find nearby homes needing food</p>
+        <button onclick="navigateTo('share.html')">
+          Share <i data-feather="heart"></i>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2025 Adiyen Sevai | Service with Compassion</p>
+  </footer>
+
+  <script>
+    function navigateTo(page) {
+      window.location.href = page;
+    }
+    feather.replace();
+  </script>
+</body>
+</html>
