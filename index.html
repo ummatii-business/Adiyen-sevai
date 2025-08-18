@@ -1,196 +1,128 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Mini Runner with Jump & Slide</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.min.js"></script>
-  <style>
-    html, body { height:100%; margin:0; background:#0b1020; }
-    #game { width:100%; height:100%; }
-  </style>
+  <meta charset="utf-8">
+  <title>Mini Subway Surfer</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
 </head>
 <body>
-  <div id="game"></div>
-
 <script>
-const W=480,H=720;
-const ROAD_WIDTH=W*0.6;
-const LANES=[W/2-ROAD_WIDTH/3, W/2, W/2+ROAD_WIDTH/3];
-const PLAYER_Y=H-120;
-const START_SPEED=220;
-const SPEED_INCREMENT=0.02;
-const OBSTACLE_RATE=900;
-const COIN_RATE=500;
-const JUMP_HEIGHT=180;
-const JUMP_DURATION=500;
-const SLIDE_TIME=600;
+const W = 480, H = 720;
+const ROAD_WIDTH = W * 0.6;
+const LANES = [
+  W/2 - ROAD_WIDTH/3,   // left lane
+  W/2,                  // middle lane
+  W/2 + ROAD_WIDTH/3    // right lane
+];
+const PLAYER_Y = H - 120;
 
-let game;
-
-class MainScene extends Phaser.Scene {
-  constructor(){ super('main'); }
+class GameScene extends Phaser.Scene {
+  constructor(){ super('Game'); }
 
   preload(){
-    this.makeRect('player',60,60,0x4fd1c5);
-    this.makeRect('obstacle',70,70,0xff5a5f);
-    this.makeCircle('coin',20,0xffd166);
-    this.makeRect('laneMark',8,40,0xffffff);
+    // 🔹 Load character sprite sheet
+    this.load.spritesheet('player',
+      'https://labs.phaser.io/assets/sprites/dude.png',
+      { frameWidth: 32, frameHeight: 48 }
+    );
+
+    // 🔹 Obstacle (crate box)
+    this.load.image('obstacle', 'https://labs.phaser.io/assets/sprites/crate.png');
+
+    // 🔹 Lane marker (white line)
+    this.load.image('laneMark', 'https://dummyimage.com/8x40/ffffff/000000.png');
   }
 
   create(){
-    this.scrollSpeed=START_SPEED;
-    this.score=0; this.best=+localStorage.getItem('bestScore')||0;
-    this.gameOver=false; this.isJumping=false; this.isSliding=false;
+    // --- Road background ---
+    this.add.rectangle(W/2, H/2, ROAD_WIDTH+60, H, 0x0f172a)
+        .setStrokeStyle(4, 0x1f2937);
+    this.add.rectangle(W/2, H/2, ROAD_WIDTH, H, 0x111827);
 
-    // Road
-    this.add.rectangle(W/2,H/2,ROAD_WIDTH+60,H,0x0f172a).setStrokeStyle(4,0x1f2937);
-    this.add.rectangle(W/2,H/2,ROAD_WIDTH,H,0x111827);
-    this.addLineDashes();
-
-    // Player
-    this.currentLane=1;
-    this.player=this.physics.add.image(LANES[this.currentLane],PLAYER_Y,'player')
-      .setImmovable(true).setDepth(10);
-    this.player.body.allowGravity=false;
-    this.player.defaultY=PLAYER_Y;
-
-    // Groups
-    this.obstacles=this.physics.add.group();
-    this.coins=this.physics.add.group();
-    this.physics.add.overlap(this.player,this.coins,this.collectCoin,null,this);
-    this.physics.add.overlap(this.player,this.obstacles,this.hitObstacle,null,this);
-
-    // UI
-    this.scoreText=this.add.text(16,14,'Score: 0',{fontFamily:'monospace',fontSize:22,color:'#e2e8f0'});
-
-    // Input
-    this.cursors=this.input.keyboard.createCursorKeys();
-    this.input.keyboard.on('keydown-LEFT',()=>this.switchLane(-1));
-    this.input.keyboard.on('keydown-RIGHT',()=>this.switchLane(1));
-    this.input.keyboard.on('keydown-UP',()=>this.jump());
-    this.input.keyboard.on('keydown-DOWN',()=>this.slide());
-    this.input.keyboard.on('keydown-SPACE',()=>{ if(this.gameOver) this.restart(); else this.jump(); });
-    this.input.keyboard.on('keydown-W',()=>this.jump());
-    this.input.keyboard.on('keydown-S',()=>this.slide());
-    this.input.keyboard.on('keydown-A',()=>this.switchLane(-1));
-    this.input.keyboard.on('keydown-D',()=>this.switchLane(1));
-
-    // Swipe
-    this.swipeStart=null;
-    this.input.on('pointerdown',p=>this.swipeStart={x:p.x,y:p.y,t:this.time.now});
-    this.input.on('pointerup',p=>{
-      if(!this.swipeStart)return;
-      const dx=p.x-this.swipeStart.x,dy=p.y-this.swipeStart.y;
-      if(Math.abs(dx)>Math.abs(dy) && Math.abs(dx)>30) this.switchLane(dx>0?1:-1);
-      else if(dy<-40) this.jump();
-      else if(dy>40) this.slide();
-      else if(this.gameOver) this.restart();
-      this.swipeStart=null;
-    });
-
-    // Spawners
-    this.obstacleTimer=this.time.addEvent({delay:OBSTACLE_RATE,loop:true,callback:this.spawnObstacle,callbackScope:this});
-    this.coinTimer=this.time.addEvent({delay:COIN_RATE,loop:true,callback:this.spawnCoinRow,callbackScope:this});
-  }
-
-  update(time,dt){
-    if(this.gameOver)return;
-    const delta=dt/1000;
-    this.scrollSpeed+=SPEED_INCREMENT*this.scrollSpeed*delta;
-    this.laneDashes.children.iterate(d=>{ d.y+=this.scrollSpeed*delta; if(d.y>H+30)d.y=-30; });
-    this.moveGroup(this.obstacles,delta);
-    this.moveGroup(this.coins,delta);
-    this.cleanupGroup(this.obstacles);
-    this.cleanupGroup(this.coins);
-    this.score+=delta*10;
-    this.scoreText.setText('Score: '+Math.floor(this.score));
-  }
-
-  // --- Player actions ---
-  jump(){
-    if(this.isJumping||this.isSliding||this.gameOver)return;
-    this.isJumping=true;
-    this.tweens.add({
-      targets:this.player,
-      y:this.player.defaultY-JUMP_HEIGHT,
-      duration:JUMP_DURATION/2,
-      yoyo:true,
-      ease:'Sine.easeOut',
-      onComplete:()=>{ this.isJumping=false; this.player.y=this.player.defaultY; }
-    });
-  }
-
-  slide(){
-    if(this.isSliding||this.isJumping||this.gameOver)return;
-    this.isSliding=true;
-    this.player.setScale(1,0.5);  // shrink height
-    this.time.delayedCall(SLIDE_TIME,()=>{
-      this.player.setScale(1,1);
-      this.isSliding=false;
-    });
-  }
-
-  // --- Helpers ---
-  makeRect(key,w,h,color){
-    const g=this.make.graphics({x:0,y:0,add:false});
-    g.fillStyle(color,1); g.fillRoundedRect(0,0,w,h,12);
-    g.generateTexture(key,w,h); g.destroy();
-  }
-  makeCircle(key,r,color){
-    const g=this.make.graphics({x:0,y:0,add:false});
-    g.fillStyle(color,1); g.fillCircle(r,r,r);
-    g.generateTexture(key,r*2,r*2); g.destroy();
-  }
-  addLineDashes(){
-    this.laneDashes=this.add.group();
-    for(let i=1;i<LANES.length;i++){
-      const x=(LANES[i-1]+LANES[i])/2;
-      for(let y=-30;y<H+60;y+=60){
-        this.laneDashes.add(this.add.image(x,y,'laneMark').setAlpha(0.4));
+    // --- Lane dashes ---
+    this.laneDashes = this.add.group();
+    for (let i=1; i<LANES.length; i++){
+      const x = (LANES[i-1] + LANES[i]) / 2;
+      for (let y=-30; y<H+60; y+=60){
+        const dash = this.add.image(x, y, 'laneMark').setAlpha(0.4);
+        this.laneDashes.add(dash);
       }
     }
+
+    // --- Player setup ---
+    this.currentLane = 1; // middle lane
+    this.player = this.physics.add.sprite(LANES[this.currentLane], PLAYER_Y, 'player')
+      .setDepth(10).setImmovable(true).setScale(2);
+
+    // 🔹 Define running animation
+    this.anims.create({
+      key: 'run',
+      frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }),
+      frameRate: 8,
+      repeat: -1
+    });
+    this.player.play('run');
+
+    // --- Controls ---
+    this.input.keyboard.on('keydown-LEFT', ()=>{ this.movePlayer(-1); });
+    this.input.keyboard.on('keydown-RIGHT', ()=>{ this.movePlayer(1); });
+
+    // --- Obstacles group ---
+    this.obstacles = this.physics.add.group();
+    this.physics.add.collider(this.player, this.obstacles, ()=>this.gameOver(), null, this);
+
+    // Timer for obstacles
+    this.time.addEvent({
+      delay: 1500, loop:true,
+      callback: ()=>this.spawnObstacle()
+    });
+
+    // Speed values
+    this.scrollSpeed = 4;
   }
-  switchLane(dir){
-    if(this.gameOver)return;
-    const target=Phaser.Math.Clamp(this.currentLane+dir,0,2);
-    if(target===this.currentLane)return;
-    this.currentLane=target;
-    this.tweens.add({targets:this.player,x:LANES[this.currentLane],duration:120,ease:'Sine.easeOut'});
+
+  movePlayer(dir){
+    let newLane = this.currentLane + dir;
+    if(newLane>=0 && newLane<=2){
+      this.currentLane = newLane;
+      this.tweens.add({
+        targets: this.player,
+        x: LANES[this.currentLane],
+        duration: 200,
+        ease: 'Power2'
+      });
+    }
   }
 
   spawnObstacle(){
-    const lane=Phaser.Math.Between(0,2);
-    const o=this.obstacles.create(LANES[lane],-80,'obstacle');
-    o.body.allowGravity=false;
+    let lane = Phaser.Math.Between(0,2);
+    let obs = this.obstacles.create(LANES[lane], -50, 'obstacle');
+    obs.setVelocityY(this.scrollSpeed*60);
+    obs.setScale(0.6);
   }
-  spawnCoinRow(){
-    const lane=Phaser.Math.Between(0,2);
-    const c=this.coins.create(LANES[lane],-40,'coin');
-    c.body.allowGravity=false;
-  }
-  moveGroup(g,delta){ g.children.iterate(o=>{if(o)o.y+=this.scrollSpeed*delta;}); }
-  cleanupGroup(g){ g.children.iterate(o=>{if(o&&o.y>H+100)o.destroy();}); }
 
-  collectCoin(player,coin){ coin.destroy(); this.score+=20; }
-  hitObstacle(){
-    if(this.gameOver)return;
-    this.gameOver=true;
-    this.obstacleTimer.remove(); this.coinTimer.remove();
-    const final=Math.floor(this.score);
-    if(final>this.best){ this.best=final; localStorage.setItem('bestScore',String(this.best)); }
-    this.add.text(W/2,H/2,'Game Over\nScore: '+final+'\nTap/Space to Restart',
-      {fontFamily:'monospace',fontSize:28,color:'#f8fafc',align:'center'}).setOrigin(0.5);
-    this.input.once('pointerup',()=>this.restart());
-    this.input.keyboard.once('keydown-SPACE',()=>this.restart());
+  update(){
+    // Move lane dashes
+    this.laneDashes.getChildren().forEach(d=>{
+      d.y += this.scrollSpeed;
+      if(d.y > H+40) d.y = -40;
+    });
   }
-  restart(){ this.scene.restart(); }
+
+  gameOver(){
+    this.scene.restart(); // simple reset
+  }
 }
 
-const cfg={type:Phaser.AUTO,width:W,height:H,parent:'game',
-  backgroundColor:'#0b1020',physics:{default:'arcade'},scene:[MainScene],
-  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH}};
-window.addEventListener('load',()=>{game=new Phaser.Game(cfg);});
+const config = {
+  type: Phaser.AUTO,
+  width: W,
+  height: H,
+  backgroundColor: '#111827',
+  physics: { default:'arcade' },
+  scene: [GameScene]
+};
+new Phaser.Game(config);
 </script>
 </body>
 </html>
