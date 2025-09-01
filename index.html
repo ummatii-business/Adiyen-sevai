@@ -2,222 +2,467 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Mini Runner - Enhanced Fixed</title>
+  <title>Neon Runner — One-File HTML5</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.min.js"></script>
   <style>
-    html, body { height:100%; margin:0; background:#0b1020; }
-    #game { width:100%; height:100%; }
+    html,body{height:100%;margin:0;background:#070b14}
+    #game{width:100%;height:100%}
+    *{box-sizing:border-box}
   </style>
 </head>
 <body>
-  <div id="game"></div>
+<div id="game"></div>
 
 <script>
-const W=480,H=720;
-const ROAD_WIDTH=W*0.6;
-const LANES=[W/2-ROAD_WIDTH/3, W/2, W/2+ROAD_WIDTH/3];
-const PLAYER_Y=H-120;
-const START_SPEED=220;
-const SPEED_INCREMENT=0.02;
-const OBSTACLE_RATE=900;
-const COIN_RATE=500;
-const JUMP_HEIGHT=180;
-const JUMP_DURATION=500;
-const SLIDE_TIME=600;
+/* =========================
+   CONFIG
+========================= */
+const W=480,H=800;
+const ROAD_W = Math.floor(W*0.66);
+const LANES=[W/2-ROAD_W/3, W/2, W/2+ROAD_W/3];
+const START_SPEED=240;
+const SPEED_GROWTH=0.015; // per second multiplicative
+const JUMP_H=160, JUMP_UP=260, JUMP_DOWN=260;
+const SLIDE_MS=520;
+const OBSTACLE_EVERY=900; // ms
+const COIN_EVERY=420;     // ms
+const SAFE_START_MS=1200; // grace period
 
+/* =========================
+   HELPER: tiny sfx (web audio)
+========================= */
+const SFX = {
+  ctx: null,
+  enabled: true,
+  init(){
+    try{
+      this.ctx = new (window.AudioContext||window.webkitAudioContext)();
+    }catch(e){ this.enabled=false; }
+  },
+  beep(freq=880, dur=0.08, type='sine', vol=0.03){
+    if(!this.enabled||!this.ctx) return;
+    const c=this.ctx;
+    const o=c.createOscillator();
+    const g=c.createGain();
+    o.type=type; o.frequency.value=freq;
+    g.gain.value=vol;
+    o.connect(g); g.connect(c.destination);
+    const t=c.currentTime;
+    o.start(t); o.stop(t+dur);
+    // little envelope
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t+0.01);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+  }
+};
+
+/* =========================
+   GAME
+========================= */
 let game;
 
-class MainScene extends Phaser.Scene {
+class Main extends Phaser.Scene{
   constructor(){ super('main'); }
 
   preload(){
-    this.makeGradientRect('player',60,60,0x4fd1c5,0x2563eb);
-    this.makeGradientRect('obstacle',70,70,0xff5a5f,0x991b1b);
-    this.makeCircle('coin',20,0xffd166);
-    this.makeRect('laneMark',8,40,0xffffff);
+    // --- Generate textures (no external assets) ---
+    this._makeRunner('runner', 70, 70, 0x39d2c2, 0x1479ff);
+    this._makeObstacle('obstacle', 70, 70, 0xff5a7a);
+    this._makeCoin('coin', 22, 0xffd166);
+    this._makeDash('dash', 8, 44, 0xffffff);
+    this._makeGlow('vignette', W, H, 0x000000);
+    this._makeButton('btn', 110, 46);
   }
 
   create(){
-    this.scrollSpeed=START_SPEED;
-    this.score=0; this.best=+localStorage.getItem('bestScore')||0;
-    this.gameOver=false; this.isJumping=false; this.isSliding=false;
+    // SFX
+    SFX.init();
 
-    // Road with vertical gradient
-    const road = this.add.graphics();
-    road.fillGradientStyle(0x1e293b,0x1e293b,0x0f172a,0x0f172a,1);
-    road.fillRect(W/2-ROAD_WIDTH/2,0,ROAD_WIDTH,H);
+    // State
+    this.speed = START_SPEED;
+    this.score=0; this.best=+localStorage.getItem('nr_best')||0;
+    this.dead=false; this.startTime=this.time.now;
+    this.isJump=false; this.isSlide=false;
+    this.currentLane=1;
 
-    this.addLineDashes();
+    // Background: starfield layers
+    this._makeStarfield();
+
+    // Road (dark + subtle gradient gloss)
+    this._drawRoad();
+
+    // Lane dashes
+    this._addLaneDashes();
 
     // Player
-    this.currentLane=1;
-    this.player=this.physics.add.image(LANES[this.currentLane],PLAYER_Y,'player')
-      .setImmovable(true).setDepth(10);
+    const yBase = H-140;
+    this.player = this.physics.add.image(LANES[this.currentLane], yBase, 'runner').setDepth(10);
     this.player.body.allowGravity=false;
-    this.player.defaultY=PLAYER_Y;
+    this.player.yBase = yBase;
+    this.playerShadow = this.add.ellipse(this.player.x, yBase+30, 60, 16, 0x000000, 0.35).setDepth(9);
+
+    // Hitbox (slightly inset)
+    this.player.body.setSize(48, 60).setOffset(11,5);
 
     // Groups
-    this.obstacles=this.physics.add.group();
-    this.coins=this.physics.add.group();
-    this.physics.add.overlap(this.player,this.coins,this.collectCoin,null,this);
-    this.physics.add.overlap(this.player,this.obstacles,this.hitObstacle,null,this);
+    this.obstacles = this.physics.add.group();
+    this.coins = this.physics.add.group();
+
+    // Overlaps
+    this.physics.add.overlap(this.player, this.coins, this._collectCoin, null, this);
+    this.physics.add.overlap(this.player, this.obstacles, this._hitObstacle, null, this);
 
     // UI
-    this.scoreText=this.add.text(16,14,'Score: 0',{fontFamily:'monospace',fontSize:22,color:'#e2e8f0'});
+    this.scoreText = this.add.text(16, 14, 'Score: 0', {fontFamily:'monospace', fontSize:22, color:'#e2e8f0'}).setDepth(50);
+    this.bestText  = this.add.text(W-16, 14, 'Best: '+this.best, {fontFamily:'monospace', fontSize:22, color:'#9ca3af'}).setOrigin(1,0).setDepth(50);
 
-    // Input
-    this.input.keyboard.on('keydown-LEFT',()=>this.switchLane(-1));
-    this.input.keyboard.on('keydown-RIGHT',()=>this.switchLane(1));
-    this.input.keyboard.on('keydown-UP',()=>this.jump());
-    this.input.keyboard.on('keydown-DOWN',()=>this.slide());
-    this.input.keyboard.on('keydown-SPACE',()=>{ if(this.gameOver) this.restart(); else this.jump(); });
+    // Pause button (top center)
+    const pauseBtn = this.add.image(W/2, 28, 'btn').setScale(0.7).setDepth(50).setInteractive({useHandCursor:true});
+    const pauseLabel = this.add.text(W/2, 28, 'PAUSE', {fontFamily:'monospace', fontSize:16, color:'#111827'}).setOrigin(0.5).setDepth(51);
+    pauseBtn.on('pointerup', ()=> this._togglePause());
 
-    // Swipe
-    this.swipeStart=null;
-    this.input.on('pointerdown',p=>this.swipeStart={x:p.x,y:p.y,t:this.time.now});
-    this.input.on('pointerup',p=>{
-      if(!this.swipeStart)return;
-      const dx=p.x-this.swipeStart.x,dy=p.y-this.swipeStart.y;
-      if(Math.abs(dx)>Math.abs(dy) && Math.abs(dx)>30) this.switchLane(dx>0?1:-1);
-      else if(dy<-40) this.jump();
-      else if(dy>40) this.slide();
-      else if(this.gameOver) this.restart();
-      this.swipeStart=null;
-    });
+    // Controls
+    this._setupInput();
 
     // Spawners
-    this.obstacleTimer=this.time.addEvent({delay:OBSTACLE_RATE,loop:true,callback:this.spawnObstacle,callbackScope:this});
-    this.coinTimer=this.time.addEvent({delay:COIN_RATE,loop:true,callback:this.spawnCoinRow,callbackScope:this});
+    this.obTimer = this.time.addEvent({ delay:OBSTACLE_EVERY, loop:true, callback:this._spawnObstacle, callbackScope:this });
+    this.coinTimer = this.time.addEvent({ delay:COIN_EVERY, loop:true, callback:this._spawnCoin, callbackScope:this });
+
+    // Tutorial hint
+    this._hint();
+
+    // Vignette
+    this.add.image(W/2, H/2, 'vignette').setDepth(100).setAlpha(0.45).setBlendMode(Phaser.BlendModes.MULTIPLY);
   }
 
-  update(time,dt){
-    if(this.gameOver)return;
-    const delta=dt/1000;
-    this.scrollSpeed+=SPEED_INCREMENT*this.scrollSpeed*delta;
-    this.laneDashes.children.iterate(d=>{ d.y+=this.scrollSpeed*delta; if(d.y>H+30)d.y=-30; });
-    this.moveGroup(this.obstacles,delta);
-    this.moveGroup(this.coins,delta);
-    this.cleanupGroup(this.obstacles);
-    this.cleanupGroup(this.coins);
-    this.score+=delta*10;
+  update(_, dt){
+    if(this.dead || this.scene.isPaused('main')) return;
+    const s = dt/1000;
+
+    // speed up gently
+    this.speed += this.speed * SPEED_GROWTH * s;
+
+    // parallax starfield
+    this._scrollStars(s);
+
+    // lane dashes
+    this.dashes.children.iterate(d=>{ d&& (d.y += this.speed*s, (d.y>H+40)&&(d.y=-40)); });
+
+    // move groups
+    this._moveGroup(this.obstacles, s);
+    this._moveGroup(this.coins, s);
+
+    // cleanup
+    this._cleanup(this.obstacles);
+    this._cleanup(this.coins);
+
+    // score
+    this.score += 10*s;
     this.scoreText.setText('Score: '+Math.floor(this.score));
+
+    // shadow follows player x
+    this.playerShadow.x = this.player.x;
   }
 
-  // --- Player actions ---
-  jump(){
-    if(this.isJumping||this.isSliding||this.gameOver)return;
-    this.isJumping=true;
+  /* -------- Input -------- */
+  _setupInput(){
+    const k = this.input.keyboard;
+    k.on('keydown-LEFT', ()=> this._lane(-1));
+    k.on('keydown-RIGHT',()=> this._lane(1));
+    k.on('keydown-A',    ()=> this._lane(-1));
+    k.on('keydown-D',    ()=> this._lane(1));
+    k.on('keydown-UP',   ()=> this._jump());
+    k.on('keydown-W',    ()=> this._jump());
+    k.on('keydown-DOWN', ()=> this._slide());
+    k.on('keydown-S',    ()=> this._slide());
+    k.on('keydown-SPACE',()=> this.dead ? this._restart() : this._jump());
+
+    // swipe + tap
+    let start=null;
+    this.input.on('pointerdown', p=> start={x:p.x,y:p.y,t:this.time.now});
+    this.input.on('pointerup', p=>{
+      if(!start) return;
+      const dx=p.x-start.x, dy=p.y-start.y;
+      if(Math.abs(dx)>Math.abs(dy) && Math.abs(dx)>30) this._lane(dx>0?1:-1);
+      else if(dy<-40) this._jump();
+      else if(dy>40) this._slide();
+      else if(this.dead) this._restart();
+      start=null;
+    });
+
+    // on-screen buttons (mobile)
+    const btnY = H-70;
+    const bL=this.add.image(80,btnY,'btn').setInteractive({useHandCursor:true}).setDepth(60);
+    const bR=this.add.image(W-80,btnY,'btn').setInteractive({useHandCursor:true}).setDepth(60);
+    const bJ=this.add.image(W/2-70,btnY,'btn').setInteractive({useHandCursor:true}).setDepth(60).setScale(0.9);
+    const bS=this.add.image(W/2+70,btnY,'btn').setInteractive({useHandCursor:true}).setDepth(60).setScale(0.9);
+    this.add.text(80,btnY,'◀',{fontFamily:'monospace',fontSize:22,color:'#111827'}).setOrigin(0.5).setDepth(61);
+    this.add.text(W-80,btnY,'▶',{fontFamily:'monospace',fontSize:22,color:'#111827'}).setOrigin(0.5).setDepth(61);
+    this.add.text(W/2-70,btnY,'JUMP',{fontFamily:'monospace',fontSize:16,color:'#111827'}).setOrigin(0.5).setDepth(61);
+    this.add.text(W/2+70,btnY,'SLIDE',{fontFamily:'monospace',fontSize:16,color:'#111827'}).setOrigin(0.5).setDepth(61);
+    bL.on('pointerdown',()=>this._lane(-1));
+    bR.on('pointerdown',()=>this._lane(1));
+    bJ.on('pointerdown',()=>this._jump());
+    bS.on('pointerdown',()=>this._slide());
+  }
+
+  /* -------- Player actions -------- */
+  _lane(dir){
+    if(this.dead) return;
+    const tgt = Phaser.Math.Clamp(this.currentLane+dir,0,2);
+    if(tgt===this.currentLane) return;
+    this.currentLane=tgt;
+    this.tweens.add({targets:this.player, x:LANES[tgt], duration:120, ease:'Sine.easeOut'});
+  }
+
+  _jump(){
+    if(this.dead||this.isJump||this.isSlide) return;
+    this.isJump=true;
+    SFX.beep(1100,0.06,'triangle',0.04);
+    // jump up
     this.tweens.add({
       targets:this.player,
-      y:this.player.defaultY-JUMP_HEIGHT,
-      duration:JUMP_DURATION/2,
-      yoyo:true,
-      ease:'Sine.easeOut',
-      onComplete:()=>{ this.isJumping=false; this.player.y=this.player.defaultY; }
+      y:this.player.yBase - JUMP_H,
+      duration:JUMP_UP,
+      ease:'Cubic.easeOut',
+      yoyo:false,
+      onUpdate:()=>{ this.playerShadow.scaleX=0.85; this.playerShadow.scaleY=0.75; },
+      onComplete:()=>{
+        // fall
+        this.tweens.add({
+          targets:this.player,
+          y:this.player.yBase,
+          duration:JUMP_DOWN,
+          ease:'Cubic.easeIn',
+          onComplete:()=>{ this.isJump=false; this.playerShadow.scaleX=1; this.playerShadow.scaleY=1; }
+        });
+      }
     });
   }
 
-  slide(){
-    if(this.isSliding||this.isJumping||this.gameOver)return;
-    this.isSliding=true;
-    this.player.setScale(1,0.5);  
-    this.time.delayedCall(SLIDE_TIME,()=>{
-      this.player.setScale(1,1);
-      this.isSliding=false;
+  _slide(){
+    if(this.dead||this.isSlide||this.isJump) return;
+    this.isSlide=true;
+    SFX.beep(600,0.06,'square',0.035);
+    // visual squash
+    this.tweens.add({targets:this.player, scaleY:0.6, duration:80, yoyo:false});
+    // shrink hitbox
+    this.player.body.setSize(48, 36).setOffset(11, 22);
+    this.time.delayedCall(SLIDE_MS, ()=>{
+      this.player.body.setSize(48, 60).setOffset(11,5);
+      this.tweens.add({targets:this.player, scaleY:1, duration:120});
+      this.isSlide=false;
     });
   }
 
-  // --- Helpers ---
-  makeRect(key,w,h,color){
-    const g=this.make.graphics({x:0,y:0,add:false});
-    g.fillStyle(color,1); g.fillRoundedRect(0,0,w,h,12);
-    g.generateTexture(key,w,h); g.destroy();
+  /* -------- Spawning -------- */
+  _spawnObstacle(){
+    if(this.dead) return;
+    if(this.time.now - this.startTime < SAFE_START_MS) return;
+    const lane = Phaser.Math.Between(0,2);
+    const o = this.obstacles.create(LANES[lane], -80, 'obstacle').setDepth(12);
+    o.body.allowGravity=false;
+    // subtle bobbing for life
+    const a = Phaser.Math.Between(0,1)? 6: -6;
+    this.tweens.add({targets:o, angle:a, duration:400, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
   }
-  makeGradientRect(key,w,h,color1,color2){
-    const g=this.make.graphics({x:0,y:0,add:false});
-    g.fillGradientStyle(color1,color1,color2,color2,1);
-    g.fillRect(0,0,w,h);
-    g.generateTexture(key,w,h); g.destroy();
+
+  _spawnCoin(){
+    if(this.dead) return;
+    const lane = Phaser.Math.Between(0,2);
+    const c = this.coins.create(LANES[lane], -40, 'coin').setDepth(11);
+    c.body.allowGravity=false;
+    this.tweens.add({targets:c, angle:360, duration:900, repeat:-1, ease:'Linear'});
+    this.tweens.add({targets:c, scale:1.2, duration:500, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
   }
-  makeCircle(key,r,color){
-    const g=this.make.graphics({x:0,y:0,add:false});
-    g.fillStyle(color,1); g.fillCircle(r,r,r);
-    g.generateTexture(key,r*2,r*2); g.destroy();
+
+  /* -------- Movement & cleanup -------- */
+  _moveGroup(g, s){ g.children.iterate(o=>{ if(o) o.y += this.speed*s; }); }
+  _cleanup(g){ g.children.iterate(o=>{ if(o && o.y>H+120) o.destroy(); }); }
+
+  /* -------- Collisions -------- */
+  _collectCoin(player, coin){
+    coin.destroy();
+    this.score += 20;
+    SFX.beep(1400,0.07,'sine',0.04);
+    // particles using coin texture
+    const p = this.add.particles(coin.x, coin.y, 'coin', {
+      lifespan: 420,
+      speed: {min:-140, max:140},
+      scale: { start:0.5, end:0 },
+      alpha: { start:1, end:0 },
+      quantity: 8
+    }).setDepth(15);
+    this.time.delayedCall(480, ()=> p.destroy());
   }
-  addLineDashes(){
-    this.laneDashes=this.add.group();
+
+  _hitObstacle(){
+    if(this.dead) return;
+    // small mercy if just started
+    if(this.time.now - this.startTime < SAFE_START_MS) return;
+
+    this.dead=true;
+    SFX.beep(220,0.12,'sawtooth',0.06);
+    this.obTimer.remove(); this.coinTimer.remove();
+
+    const final = Math.floor(this.score);
+    if(final>this.best){ this.best=final; localStorage.setItem('nr_best', String(this.best)); }
+
+    // dim overlay
+    const fade=this.add.rectangle(W/2,H/2,W,H,0x000000,0.55).setDepth(200);
+
+    // Panel
+    const panel = this.add.rectangle(W/2, H/2, 360, 240, 0x0b1222, 0.96)
+      .setStrokeStyle(6, 0x39d2c2).setDepth(201).setOrigin(0.5);
+
+    this.add.text(W/2, H/2-78, 'GAME OVER', {fontFamily:'monospace', fontSize:34, color:'#ff6b6b'})
+      .setOrigin(0.5).setDepth(202);
+    this.add.text(W/2, H/2-18, `Score: ${final}\nBest: ${this.best}`, 
+      {fontFamily:'monospace', fontSize:22, color:'#e5e7eb', align:'center'}).setOrigin(0.5).setDepth(202);
+    const rb = this.add.image(W/2, H/2+70, 'btn').setDepth(202).setInteractive({useHandCursor:true});
+    this.add.text(W/2, H/2+70, 'RESTART', {fontFamily:'monospace', fontSize:18, color:'#111827'}).setOrigin(0.5).setDepth(203);
+    rb.on('pointerup', ()=> this._restart());
+
+    // space to restart
+    this.input.keyboard.once('keydown-SPACE', ()=> this._restart());
+  }
+
+  _restart(){ this.scene.restart(); }
+
+  _togglePause(){
+    if(this.scene.isPaused('main')){
+      this.scene.resume('main');
+      this.pauseOverlay?.destroy();
+      this.pauseOverlay=null;
+    }else{
+      this.scene.pause('main');
+      const dim=this.add.rectangle(W/2,H/2,W,H,0x000000,0.45).setDepth(210);
+      const p=this.add.rectangle(W/2,H/2,300,180,0x0b1222,0.96).setStrokeStyle(6,0x39d2c2).setDepth(211);
+      const t=this.add.text(W/2,H/2-20,'PAUSED',{fontFamily:'monospace',fontSize:28,color:'#e5e7eb'}).setOrigin(0.5).setDepth(212);
+      const r=this.add.text(W/2,H/2+46,'Tap anywhere to resume',{fontFamily:'monospace',fontSize:16,color:'#9ca3af'}).setOrigin(0.5).setDepth(212);
+      this.pauseOverlay = this.add.container(0,0,[dim,p,t,r]).setDepth(210);
+      this.input.once('pointerup', ()=> this._togglePause());
+    }
+  }
+
+  /* -------- Visual construction -------- */
+  _makeStarfield(){
+    this.stars1 = this.add.group();
+    this.stars2 = this.add.group();
+    this.stars3 = this.add.group();
+    const mk=(grp,count,size,alpha)=>{
+      for(let i=0;i<count;i++){
+        const x=Phaser.Math.Between(0,W), y=Phaser.Math.Between(0,H);
+        grp.add(this.add.star(x,y,5,1,size,0xffffff, alpha));
+      }
+    };
+    mk(this.stars1, 60, 1.5, 0.4);
+    mk(this.stars2, 40, 2.2, 0.6);
+    mk(this.stars3, 20, 3.0, 0.9);
+  }
+  _scrollStars(s){
+    const sc=(grp,spd)=>{
+      grp.children.iterate(st=>{
+        st.y += spd*s;
+        if(st.y>H) st.y = -5, st.x = Phaser.Math.Between(0,W);
+      });
+    };
+    sc(this.stars1, this.speed*0.25);
+    sc(this.stars2, this.speed*0.35);
+    sc(this.stars3, this.speed*0.5);
+  }
+
+  _drawRoad(){
+    // outer shoulders
+    this.add.rectangle(W/2, H/2, ROAD_W+60, H, 0x0d1222).setStrokeStyle(3, 0x1e2a3d);
+
+    // road body with subtle gloss (two rects)
+    const road = this.add.rectangle(W/2, H/2, ROAD_W, H, 0x0f172a);
+    const gloss = this.add.rectangle(W/2, H*0.25, ROAD_W, H*0.5, 0xffffff, 0.02);
+    gloss.setBlendMode(Phaser.BlendModes.SCREEN);
+  }
+
+  _addLaneDashes(){
+    this.dashes=this.add.group();
     for(let i=1;i<LANES.length;i++){
       const x=(LANES[i-1]+LANES[i])/2;
-      for(let y=-30;y<H+60;y+=60){
-        this.laneDashes.add(this.add.image(x,y,'laneMark').setAlpha(0.4));
+      for(let y=-40;y<H+40;y+=64){
+        this.dashes.add(this.add.image(x,y,'dash').setAlpha(0.28));
       }
     }
   }
-  switchLane(dir){
-    if(this.gameOver)return;
-    const target=Phaser.Math.Clamp(this.currentLane+dir,0,2);
-    if(target===this.currentLane)return;
-    this.currentLane=target;
-    this.tweens.add({targets:this.player,x:LANES[this.currentLane],duration:120,ease:'Sine.easeOut'});
+
+  /* -------- Texture makers -------- */
+  _makeRunner(key,w,h,c1,c2){
+    const g=this.make.graphics({x:0,y:0,add:false});
+    // body rounded
+    g.fillStyle(c1,1); g.fillRoundedRect(0,0,w,h,14);
+    // glossy top overlay
+    g.fillStyle(0xffffff,0.18); g.fillRoundedRect(6,6,w-12, Math.floor(h*0.45), 10);
+    // inner panel
+    g.lineStyle(3, c2, 1); g.strokeRoundedRect(6,6,w-12,h-12,12);
+    // eyes
+    g.fillStyle(0x0b1020,1); g.fillCircle(w*0.32,h*0.36,5); g.fillCircle(w*0.68,h*0.36,5);
+    // tiny smile
+    g.lineStyle(2,0x0b1020,0.8); g.beginPath(); g.arc(w/2, h*0.58, 10, 0.15*Math.PI, 0.85*Math.PI); g.strokePath();
+    g.generateTexture(key,w,h); g.destroy();
+  }
+  _makeObstacle(key,w,h,color){
+    const g=this.make.graphics({x:0,y:0,add:false});
+    g.fillStyle(color,1); g.fillRoundedRect(0,0,w,h,12);
+    // stripes
+    g.fillStyle(0xffffff,0.12);
+    for(let y=6;y<h;y+=14){ g.fillRect(8,y,w-16,6); }
+    g.generateTexture(key,w,h); g.destroy();
+  }
+  _makeCoin(key,r,color){
+    const d=r*2;
+    const g=this.make.graphics({x:0,y:0,add:false});
+    g.fillStyle(color,1); g.fillCircle(r,r,r);
+    g.lineStyle(4,0xe5b545,1); g.strokeCircle(r,r,r-3);
+    g.fillStyle(0xffffff,0.22); g.fillCircle(r-4,r-6,r*0.55);
+    g.generateTexture(key,d,d); g.destroy();
+  }
+  _makeDash(key,w,h,c){
+    const g=this.make.graphics({x:0,y:0,add:false});
+    g.fillStyle(c,1); g.fillRoundedRect(0,0,w,h,4);
+    g.generateTexture(key,w,h); g.destroy();
+  }
+  _makeGlow(key,w,h,base){
+    // vignette using radial alpha
+    const g=this.make.graphics({x:0,y:0,add:false});
+    const cx=w/2, cy=h/2, max=Math.hypot(cx,cy);
+    for(let r=0;r<max;r+=6){
+      const a = Phaser.Math.Clamp((r/max),0,1);
+      g.fillStyle(base, a*0.3);
+      g.fillCircle(cx,cy, max - r);
+    }
+    g.generateTexture(key,w,h); g.destroy();
   }
 
-  spawnObstacle(){
-    const lane=Phaser.Math.Between(0,2);
-    const o=this.obstacles.create(LANES[lane],-80,'obstacle');
-    o.body.allowGravity=false;
+  /* -------- UI Bits -------- */
+  _hint(){
+    const t = this.add.text(W/2, H*0.62,
+      'SWIPE ← → to change lanes\nSWIPE ↑ to JUMP • SWIPE ↓ to SLIDE',
+      {fontFamily:'monospace', fontSize:16, color:'#a5b4fc', align:'center'}).setOrigin(0.5).setDepth(30);
+    this.tweens.add({targets:t, alpha:0, duration:2800, delay:2000, onComplete:()=>t.destroy()});
   }
-  spawnCoinRow(){
-    const lane=Phaser.Math.Between(0,2);
-    const c=this.coins.create(LANES[lane],-40,'coin');
-    c.body.allowGravity=false;
-    // make coins rotate & pulse
-    this.tweens.add({targets:c,angle:360,duration:1000,repeat:-1});
-    this.tweens.add({targets:c,scale:1.2,duration:500,yoyo:true,repeat:-1});
-  }
-  moveGroup(g,delta){ g.children.iterate(o=>{if(o)o.y+=this.scrollSpeed*delta;}); }
-  cleanupGroup(g){ g.children.iterate(o=>{if(o&&o.y>H+100)o.destroy();}); }
-
-  collectCoin(player,coin){ 
-    coin.destroy(); 
-    this.score+=20; 
-    const particles=this.add.particles(coin.x,coin.y,'coin',{
-      speed:{min:-100,max:100},
-      scale:{start:0.5,end:0},
-      lifespan:500,
-      quantity:6
-    });
-    this.time.delayedCall(600,()=>particles.destroy());
-  }
-
-  hitObstacle(){
-    if(this.gameOver)return;
-    this.gameOver=true;
-    this.obstacleTimer.remove(); this.coinTimer.remove();
-    const final=Math.floor(this.score);
-    if(final>this.best){ this.best=final; localStorage.setItem('bestScore',String(this.best)); }
-
-    // Game Over Panel
-    this.add.rectangle(W/2,H/2,360,220,0x111827,0.95)
-      .setStrokeStyle(6,0x4fd1c5).setOrigin(0.5).setDepth(20);
-    this.add.text(W/2,H/2-60,'Game Over',
-      {fontFamily:'monospace',fontSize:36,color:'#f87171'}).setOrigin(0.5).setDepth(21);
-    this.add.text(W/2,H/2+10,'Score: '+final+'\nBest: '+this.best,
-      {fontFamily:'monospace',fontSize:22,color:'#e2e8f0',align:'center'}).setOrigin(0.5).setDepth(21);
-    this.add.text(W/2,H/2+90,'Tap/Space to Restart',
-      {fontFamily:'monospace',fontSize:18,color:'#facc15'}).setOrigin(0.5).setDepth(21);
-
-    this.input.once('pointerup',()=>this.restart());
-    this.input.keyboard.once('keydown-SPACE',()=>this.restart());
-  }
-
-  restart(){ this.scene.restart(); }
 }
 
-const cfg={type:Phaser.AUTO,width:W,height:H,parent:'game',
-  backgroundColor:'#0b1020',physics:{default:'arcade'},scene:[MainScene],
-  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH}};
-window.addEventListener('load',()=>{game=new Phaser.Game(cfg);});
+/* =========================
+   BOOT
+========================= */
+const cfg={
+  type: Phaser.AUTO,
+  width: W, height: H,
+  parent: 'game',
+  backgroundColor: '#070b14',
+  physics: { default: 'arcade' },
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  scene: [Main]
+};
+window.addEventListener('load', ()=>{ game=new Phaser.Game(cfg); });
 </script>
 </body>
 </html>
