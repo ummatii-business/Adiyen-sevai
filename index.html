@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Mini Runner with Jump & Slide</title>
+  <title>Mini Runner - Enhanced Graphics</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.min.js"></script>
   <style>
@@ -32,8 +32,8 @@ class MainScene extends Phaser.Scene {
   constructor(){ super('main'); }
 
   preload(){
-    this.makeRect('player',60,60,0x4fd1c5);
-    this.makeRect('obstacle',70,70,0xff5a5f);
+    this.makeGradientRect('player',60,60,0x4fd1c5,0x2563eb);
+    this.makeGradientRect('obstacle',70,70,0xff5a5f,0x991b1b);
     this.makeCircle('coin',20,0xffd166);
     this.makeRect('laneMark',8,40,0xffffff);
   }
@@ -43,9 +43,14 @@ class MainScene extends Phaser.Scene {
     this.score=0; this.best=+localStorage.getItem('bestScore')||0;
     this.gameOver=false; this.isJumping=false; this.isSliding=false;
 
-    // Road
-    this.add.rectangle(W/2,H/2,ROAD_WIDTH+60,H,0x0f172a).setStrokeStyle(4,0x1f2937);
-    this.add.rectangle(W/2,H/2,ROAD_WIDTH,H,0x111827);
+    // Road with gradient
+    let road=this.add.graphics();
+    let grad=road.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#1e293b'); grad.addColorStop(1,'#0f172a');
+    road.fillStyle(0xffffff);
+    road.fillGradientStyle(0x1e293b,0x1e293b,0x0f172a,0x0f172a);
+    road.fillRect(W/2-ROAD_WIDTH/2,0,ROAD_WIDTH,H);
+
     this.addLineDashes();
 
     // Player
@@ -54,6 +59,12 @@ class MainScene extends Phaser.Scene {
       .setImmovable(true).setDepth(10);
     this.player.body.allowGravity=false;
     this.player.defaultY=PLAYER_Y;
+
+    // Lights for glow
+    this.lights.enable().setAmbientColor(0x555555);
+    this.player.setPipeline('Light2D');
+    this.lights.addLight(this.player.x, this.player.y, 200)
+      .setColor(0x4fd1c5).setIntensity(2);
 
     // Groups
     this.obstacles=this.physics.add.group();
@@ -124,7 +135,7 @@ class MainScene extends Phaser.Scene {
   slide(){
     if(this.isSliding||this.isJumping||this.gameOver)return;
     this.isSliding=true;
-    this.player.setScale(1,0.5);  // shrink height
+    this.player.setScale(1,0.5);  
     this.time.delayedCall(SLIDE_TIME,()=>{
       this.player.setScale(1,1);
       this.isSliding=false;
@@ -135,6 +146,15 @@ class MainScene extends Phaser.Scene {
   makeRect(key,w,h,color){
     const g=this.make.graphics({x:0,y:0,add:false});
     g.fillStyle(color,1); g.fillRoundedRect(0,0,w,h,12);
+    g.generateTexture(key,w,h); g.destroy();
+  }
+  makeGradientRect(key,w,h,color1,color2){
+    const g=this.make.graphics({x:0,y:0,add:false});
+    const gradient=g.createLinearGradient(0,0,0,h);
+    gradient.addColorStop(0, Phaser.Display.Color.IntegerToColor(color1).rgba);
+    gradient.addColorStop(1, Phaser.Display.Color.IntegerToColor(color2).rgba);
+    g.fillGradientStyle(color1,color1,color2,color2,1);
+    g.fillRect(0,0,w,h);
     g.generateTexture(key,w,h); g.destroy();
   }
   makeCircle(key,r,color){
@@ -168,22 +188,46 @@ class MainScene extends Phaser.Scene {
     const lane=Phaser.Math.Between(0,2);
     const c=this.coins.create(LANES[lane],-40,'coin');
     c.body.allowGravity=false;
+    // make coins rotate
+    this.tweens.add({targets:c,angle:360,duration:1000,repeat:-1});
+    this.tweens.add({targets:c,scale:1.2,duration:500,yoyo:true,repeat:-1});
   }
   moveGroup(g,delta){ g.children.iterate(o=>{if(o)o.y+=this.scrollSpeed*delta;}); }
   cleanupGroup(g){ g.children.iterate(o=>{if(o&&o.y>H+100)o.destroy();}); }
 
-  collectCoin(player,coin){ coin.destroy(); this.score+=20; }
+  collectCoin(player,coin){ 
+    coin.destroy(); 
+    this.score+=20; 
+    const particles=this.add.particles(coin.x,coin.y,'coin',{
+      speed:{min:-100,max:100},
+      scale:{start:0.5,end:0},
+      lifespan:500,
+      quantity:6
+    });
+    this.time.delayedCall(600,()=>particles.destroy());
+  }
+
   hitObstacle(){
     if(this.gameOver)return;
     this.gameOver=true;
     this.obstacleTimer.remove(); this.coinTimer.remove();
     const final=Math.floor(this.score);
     if(final>this.best){ this.best=final; localStorage.setItem('bestScore',String(this.best)); }
-    this.add.text(W/2,H/2,'Game Over\nScore: '+final+'\nTap/Space to Restart',
-      {fontFamily:'monospace',fontSize:28,color:'#f8fafc',align:'center'}).setOrigin(0.5);
+
+    // Game Over Panel
+    let panel=this.add.rectangle(W/2,H/2,360,220,0x111827,0.95)
+      .setStrokeStyle(6,0x4fd1c5).setOrigin(0.5).setDepth(20);
+    this.add.text(W/2,H/2-60,'Game Over',
+      {fontFamily:'monospace',fontSize:36,color:'#f87171'}).setOrigin(0.5).setDepth(21);
+    this.add.text(W/2,H/2+10,'Score: '+final+'\nBest: '+this.best,
+      {fontFamily:'monospace',fontSize:22,color:'#e2e8f0',align:'center'}).setOrigin(0.5).setDepth(21);
+    this.add.text(W/2,H/2+90,'Tap/Space to Restart',
+      {fontFamily:'monospace',fontSize:18,color:'#facc15'}).setOrigin(0.5).setDepth(21);
+
     this.input.once('pointerup',()=>this.restart());
     this.input.keyboard.once('keydown-SPACE',()=>this.restart());
   }
+
   restart(){ this.scene.restart(); }
 }
 
