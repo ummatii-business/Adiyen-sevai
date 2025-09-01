@@ -1,125 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Worldclass Runner</title>
+  <meta charset="UTF-8">
+  <title>World Class Car Race</title>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
   <style>
-    body { margin: 0; background: #0f172a; }
+    body { margin: 0; background: #111; }
     canvas { display: block; margin: auto; }
   </style>
 </head>
 <body>
 <script>
-const W = 480;
-const H = 720;
-const ROAD_WIDTH = 300;
+const W = 480, H = 720;
 
-class RunnerGame extends Phaser.Scene {
-  constructor() { super("RunnerGame"); }
-
-  preload(){}
+class CarRace extends Phaser.Scene {
+  constructor(){ super("CarRace"); }
 
   create(){
-    // Background gradient
-    let bg = this.add.graphics();
-    let g = bg.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#1e293b');
-    g.addColorStop(1, '#0f172a');
-    bg.fillStyle(0xffffff);
-    bg.fillGradientStyle(0x1e293b,0x1e293b,0x0f172a,0x0f172a);
-    bg.fillRect(0, 0, W, H);
+    // Road background (scrolling)
+    this.road = this.add.tileSprite(W/2, H/2, 300, H, 0x222).setOrigin(0.5);
+    this.road.setFillStyle = 0x222;
 
-    // Road
-    this.road = this.add.rectangle(W/2, H/2, ROAD_WIDTH, H, 0x222831).setOrigin(0.5);
-
-    // Player
-    this.player = this.add.rectangle(W/2, H-80, 60, 60, 0x4fd1c5);
+    // Player Car
+    this.player = this.add.rectangle(W/2, H-100, 50, 90, 0x00ffcc);
     this.physics.add.existing(this.player);
     this.player.body.setCollideWorldBounds(true);
 
+    // Enemy cars
+    this.enemies = this.physics.add.group();
+
     // Controls
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.input.on('pointerdown', p => {
-      if(p.x < W/2) this.moveLeft(); else this.moveRight();
-    });
 
-    // Groups
-    this.obstacles = this.physics.add.group();
-    this.coins = this.physics.add.group();
-
+    // Score
     this.score = 0;
-    this.scoreText = this.add.text(20, 20, "Score: 0", {
-      fontSize: 24,
-      color: "#fff",
-      fontFamily: "monospace"
+    this.scoreText = this.add.text(20,20,"Score: 0",{
+      fontSize: "24px", color:"#fff", fontFamily:"monospace"
     });
 
     // Collisions
-    this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
-    this.physics.add.overlap(this.player, this.obstacles, this.hitObstacle, null, this);
+    this.physics.add.overlap(this.player, this.enemies, this.hitEnemy, null, this);
 
-    // Timers
-    this.time.addEvent({ delay: 1500, callback: this.spawnObstacle, callbackScope: this, loop: true });
-    this.time.addEvent({ delay: 1000, callback: this.spawnCoin, callbackScope: this, loop: true });
+    // Enemy spawn
+    this.time.addEvent({ delay: 1000, callback: this.spawnEnemy, callbackScope: this, loop: true });
   }
 
-  moveLeft(){ this.player.x = Phaser.Math.Clamp(this.player.x-100, W/2-ROAD_WIDTH/2+40, W/2+ROAD_WIDTH/2-40); }
-  moveRight(){ this.player.x = Phaser.Math.Clamp(this.player.x+100, W/2-ROAD_WIDTH/2+40, W/2+ROAD_WIDTH/2-40); }
-
-  spawnObstacle(){
-    let x = Phaser.Math.Between(W/2-ROAD_WIDTH/2+40, W/2+ROAD_WIDTH/2-40);
-    let obs = this.add.rectangle(x, -50, 70, 70, 0xff5a5f);
-    this.physics.add.existing(obs);
-    obs.body.setVelocityY(250);
-    this.obstacles.add(obs);
+  spawnEnemy(){
+    let x = Phaser.Math.Between(W/2-140, W/2+140);
+    let enemy = this.add.rectangle(x, -100, 50, 90, 0xff4444);
+    this.physics.add.existing(enemy);
+    enemy.body.setVelocityY(250);
+    this.enemies.add(enemy);
   }
 
-  spawnCoin(){
-    let x = Phaser.Math.Between(W/2-ROAD_WIDTH/2+40, W/2+ROAD_WIDTH/2-40);
-    let coin = this.add.circle(x, -30, 15, 0xfacc15);
-    this.physics.add.existing(coin);
-    coin.body.setVelocityY(200);
-    this.coins.add(coin);
-
-    // Rotate sparkle
-    this.tweens.add({
-      targets: coin,
-      scale: { from: 1, to: 1.3 },
-      duration: 500,
-      yoyo: true,
-      repeat: -1
-    });
-  }
-
-  collectCoin(player, coin){
-    this.score += 10;
-    this.scoreText.setText("Score: "+this.score);
-    coin.destroy();
-
-    let particles = this.add.particles(coin.x, coin.y, 'coin', {
-      speed: { min: -100, max: 100 },
-      lifespan: 400,
-      quantity: 8,
-      scale: { start: 0.5, end: 0 }
-    });
-    this.time.delayedCall(500, ()=>particles.destroy());
-  }
-
-  hitObstacle(player, obs){
+  hitEnemy(player, enemy){
     this.physics.pause();
     player.setFillStyle(0xff0000);
 
-    let panel = this.add.rectangle(W/2, H/2, 300, 200, 0x111827, 0.95)
-      .setStrokeStyle(6,0x4fd1c5).setOrigin(0.5).setDepth(20);
-    this.add.text(W/2, H/2-40, "Game Over", {fontSize:36, color:"#f87171", fontFamily:"monospace"})
-      .setOrigin(0.5).setDepth(21);
-    this.add.text(W/2, H/2+20, "Score: "+this.score+"\nTap or Space to Restart",
-      {fontSize:20, color:"#e2e8f0", fontFamily:"monospace", align:"center"})
-      .setOrigin(0.5).setDepth(21);
+    let box = this.add.rectangle(W/2,H/2,350,200,0x000000,0.85)
+      .setStrokeStyle(5,0x00ffcc);
+    this.add.text(W/2,H/2-40,"GAME OVER",{fontSize:"40px",color:"#ff5555",fontFamily:"monospace"}).setOrigin(0.5);
+    this.add.text(W/2,H/2+30,"Score: "+this.score+"\nPress SPACE to Restart",{fontSize:"20px",color:"#fff",align:"center"}).setOrigin(0.5);
 
-    this.input.once("pointerdown", ()=>this.scene.restart());
-    this.input.keyboard.once("keydown-SPACE", ()=>this.scene.restart());
+    this.input.keyboard.once("keydown-SPACE",()=>this.scene.restart());
+  }
+
+  update(){
+    // Scroll road
+    this.road.tilePositionY -= 5;
+
+    // Player movement
+    if(this.cursors.left.isDown) this.player.x -= 5;
+    if(this.cursors.right.isDown) this.player.x += 5;
+    if(this.cursors.up.isDown) this.player.y -= 5;
+    if(this.cursors.down.isDown) this.player.y += 5;
+
+    // Clamp inside road
+    this.player.x = Phaser.Math.Clamp(this.player.x, W/2-140, W/2+140);
+    this.player.y = Phaser.Math.Clamp(this.player.y, H-200, H-50);
+
+    // Update score
+    this.score += 1;
+    this.scoreText.setText("Score: " + this.score);
+
+    // Clean enemies offscreen
+    this.enemies.children.iterate(e=>{
+      if(e && e.y > H+100) e.destroy();
+    });
   }
 }
 
@@ -127,10 +94,11 @@ new Phaser.Game({
   type: Phaser.AUTO,
   width: W,
   height: H,
-  backgroundColor: "#0f172a",
+  backgroundColor: "#111",
   physics: { default: "arcade" },
-  scene: [RunnerGame]
+  scene: [CarRace]
 });
 </script>
 </body>
 </html>
+
