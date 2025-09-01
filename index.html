@@ -38,23 +38,10 @@
     const restartBtn = document.getElementById("restartBtn");
     const accelerateBtn = document.getElementById("accelerateBtn");
 
-    // Base64 images for car & traffic
-    const carImg = new Image();
-    carImg.src = "data:image/svg+xml;base64," + btoa(`<svg xmlns='http://www.w3.org/2000/svg' width='60' height='100'>
-      <rect width='60' height='100' rx='10' fill='red'/>
-      <rect x='15' y='10' width='30' height='80' fill='black'/>
-    </svg>`);
-
-    const trafficImg = new Image();
-    trafficImg.src = "data:image/svg+xml;base64," + btoa(`<svg xmlns='http://www.w3.org/2000/svg' width='60' height='100'>
-      <rect width='60' height='100' rx='10' fill='blue'/>
-      <rect x='15' y='10' width='30' height='80' fill='black'/>
-    </svg>`);
-
     let car, traffic, score, gameOver, keys, roadOffset, speed, accelerating;
 
     function initGame() {
-      car = { x: 170, y: 480, width: 60, height: 100, speed: 5 };
+      car = { x: 170, y: 480, width: 60, height: 100, color: "red" };
       traffic = [];
       score = 0;
       gameOver = false;
@@ -98,15 +85,20 @@
       ctx.fillRect(305, 0, 5, canvas.height);
     }
 
-    function drawCar(c, img) {
-      ctx.drawImage(img, c.x, c.y, c.width, c.height);
+    function drawCar(c) {
+      ctx.fillStyle = c.color;
+      ctx.fillRect(c.x, c.y, c.width, c.height);
+
+      // windows
+      ctx.fillStyle = "black";
+      ctx.fillRect(c.x + 15, c.y + 10, 30, c.height - 20);
     }
 
     function spawnTraffic() {
       if (Math.random() < 0.02) {
         let lane = Math.floor(Math.random() * 3);
         let x = 110 + lane * 70;
-        traffic.push({ x: x, y: -120, width: 60, height: 100, speed: speed });
+        traffic.push({ x: x, y: -120, width: 60, height: 100, color: "blue", speed: speed });
       }
     }
 
@@ -136,26 +128,26 @@
       drawRoad();
 
       // Player controls
-      if (keys["ArrowLeft"] && car.x > 100) car.x -= car.speed;
-      if (keys["ArrowRight"] && car.x < 260) car.x += car.speed;
+      if (keys["ArrowLeft"] && car.x > 100) car.x -= 5;
+      if (keys["ArrowRight"] && car.x < 260) car.x += 5;
 
       // Acceleration button
       if (accelerating) speed = 7;
       else speed = 4;
 
-      drawCar(car, carImg);
+      drawCar(car);
 
       spawnTraffic();
       updateTraffic();
 
       for (let t of traffic) {
-        drawCar(t, trafficImg);
+        drawCar(t);
         if (checkCollision(car, t)) {
           gameOver = true;
         }
       }
 
-      score += accelerating ? 2 : 1; // faster scoring if accelerating
+      score += accelerating ? 2 : 1;
       scoreEl.textContent = "Score: " + score;
 
       requestAnimationFrame(update);
