@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Mini Runner - Enhanced Graphics</title>
+  <title>Mini Runner - Enhanced Fixed</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.min.js"></script>
   <style>
@@ -43,12 +43,9 @@ class MainScene extends Phaser.Scene {
     this.score=0; this.best=+localStorage.getItem('bestScore')||0;
     this.gameOver=false; this.isJumping=false; this.isSliding=false;
 
-    // Road with gradient
-    let road=this.add.graphics();
-    let grad=road.createLinearGradient(0,0,0,H);
-    grad.addColorStop(0,'#1e293b'); grad.addColorStop(1,'#0f172a');
-    road.fillStyle(0xffffff);
-    road.fillGradientStyle(0x1e293b,0x1e293b,0x0f172a,0x0f172a);
+    // Road with vertical gradient
+    const road = this.add.graphics();
+    road.fillGradientStyle(0x1e293b,0x1e293b,0x0f172a,0x0f172a,1);
     road.fillRect(W/2-ROAD_WIDTH/2,0,ROAD_WIDTH,H);
 
     this.addLineDashes();
@@ -60,12 +57,6 @@ class MainScene extends Phaser.Scene {
     this.player.body.allowGravity=false;
     this.player.defaultY=PLAYER_Y;
 
-    // Lights for glow
-    this.lights.enable().setAmbientColor(0x555555);
-    this.player.setPipeline('Light2D');
-    this.lights.addLight(this.player.x, this.player.y, 200)
-      .setColor(0x4fd1c5).setIntensity(2);
-
     // Groups
     this.obstacles=this.physics.add.group();
     this.coins=this.physics.add.group();
@@ -76,16 +67,11 @@ class MainScene extends Phaser.Scene {
     this.scoreText=this.add.text(16,14,'Score: 0',{fontFamily:'monospace',fontSize:22,color:'#e2e8f0'});
 
     // Input
-    this.cursors=this.input.keyboard.createCursorKeys();
     this.input.keyboard.on('keydown-LEFT',()=>this.switchLane(-1));
     this.input.keyboard.on('keydown-RIGHT',()=>this.switchLane(1));
     this.input.keyboard.on('keydown-UP',()=>this.jump());
     this.input.keyboard.on('keydown-DOWN',()=>this.slide());
     this.input.keyboard.on('keydown-SPACE',()=>{ if(this.gameOver) this.restart(); else this.jump(); });
-    this.input.keyboard.on('keydown-W',()=>this.jump());
-    this.input.keyboard.on('keydown-S',()=>this.slide());
-    this.input.keyboard.on('keydown-A',()=>this.switchLane(-1));
-    this.input.keyboard.on('keydown-D',()=>this.switchLane(1));
 
     // Swipe
     this.swipeStart=null;
@@ -150,9 +136,6 @@ class MainScene extends Phaser.Scene {
   }
   makeGradientRect(key,w,h,color1,color2){
     const g=this.make.graphics({x:0,y:0,add:false});
-    const gradient=g.createLinearGradient(0,0,0,h);
-    gradient.addColorStop(0, Phaser.Display.Color.IntegerToColor(color1).rgba);
-    gradient.addColorStop(1, Phaser.Display.Color.IntegerToColor(color2).rgba);
     g.fillGradientStyle(color1,color1,color2,color2,1);
     g.fillRect(0,0,w,h);
     g.generateTexture(key,w,h); g.destroy();
@@ -188,7 +171,7 @@ class MainScene extends Phaser.Scene {
     const lane=Phaser.Math.Between(0,2);
     const c=this.coins.create(LANES[lane],-40,'coin');
     c.body.allowGravity=false;
-    // make coins rotate
+    // make coins rotate & pulse
     this.tweens.add({targets:c,angle:360,duration:1000,repeat:-1});
     this.tweens.add({targets:c,scale:1.2,duration:500,yoyo:true,repeat:-1});
   }
@@ -215,7 +198,7 @@ class MainScene extends Phaser.Scene {
     if(final>this.best){ this.best=final; localStorage.setItem('bestScore',String(this.best)); }
 
     // Game Over Panel
-    let panel=this.add.rectangle(W/2,H/2,360,220,0x111827,0.95)
+    this.add.rectangle(W/2,H/2,360,220,0x111827,0.95)
       .setStrokeStyle(6,0x4fd1c5).setOrigin(0.5).setDepth(20);
     this.add.text(W/2,H/2-60,'Game Over',
       {fontFamily:'monospace',fontSize:36,color:'#f87171'}).setOrigin(0.5).setDepth(21);
