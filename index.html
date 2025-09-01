@@ -2,103 +2,115 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>World Class Car Race</title>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+  <title>Car Racing Game</title>
   <style>
-    body { margin: 0; background: #111; }
-    canvas { display: block; margin: auto; }
+    body { margin: 0; overflow: hidden; background: #111; }
+    canvas { display: block; margin: auto; background: #333; }
   </style>
 </head>
 <body>
+<canvas id="gameCanvas" width="400" height="600"></canvas>
 <script>
-const W = 480, H = 720;
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
 
-class CarRace extends Phaser.Scene {
-  constructor(){ super("CarRace"); }
+let roadWidth = 200;
+let laneX = (canvas.width - roadWidth) / 2;
+let player = { x: laneX + roadWidth/2 - 20, y: 500, w: 40, h: 80, speed: 5 };
+let enemies = [];
+let keys = {};
+let score = 0;
+let gameOver = false;
 
-  create(){
-    // Road background (scrolling)
-    this.road = this.add.tileSprite(W/2, H/2, 300, H, 0x222).setOrigin(0.5);
-    this.road.setFillStyle = 0x222;
+// Controls
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
 
-    // Player Car
-    this.player = this.add.rectangle(W/2, H-100, 50, 90, 0x00ffcc);
-    this.physics.add.existing(this.player);
-    this.player.body.setCollideWorldBounds(true);
+// Spawn enemy cars
+function spawnEnemy(){
+  let lane = Math.floor(Math.random()*3);
+  let x = laneX + lane*(roadWidth/3) + 10;
+  enemies.push({x:x,y:-100,w:40,h:80,speed:4+Math.random()*3});
+}
+setInterval(spawnEnemy, 1500);
 
-    // Enemy cars
-    this.enemies = this.physics.add.group();
+// Draw road + lanes
+function drawRoad(){
+  ctx.fillStyle = "#555";
+  ctx.fillRect(laneX,0,roadWidth,canvas.height);
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(laneX,0,roadWidth,canvas.height);
 
-    // Controls
-    this.cursors = this.input.keyboard.createCursorKeys();
-
-    // Score
-    this.score = 0;
-    this.scoreText = this.add.text(20,20,"Score: 0",{
-      fontSize: "24px", color:"#fff", fontFamily:"monospace"
-    });
-
-    // Collisions
-    this.physics.add.overlap(this.player, this.enemies, this.hitEnemy, null, this);
-
-    // Enemy spawn
-    this.time.addEvent({ delay: 1000, callback: this.spawnEnemy, callbackScope: this, loop: true });
-  }
-
-  spawnEnemy(){
-    let x = Phaser.Math.Between(W/2-140, W/2+140);
-    let enemy = this.add.rectangle(x, -100, 50, 90, 0xff4444);
-    this.physics.add.existing(enemy);
-    enemy.body.setVelocityY(250);
-    this.enemies.add(enemy);
-  }
-
-  hitEnemy(player, enemy){
-    this.physics.pause();
-    player.setFillStyle(0xff0000);
-
-    let box = this.add.rectangle(W/2,H/2,350,200,0x000000,0.85)
-      .setStrokeStyle(5,0x00ffcc);
-    this.add.text(W/2,H/2-40,"GAME OVER",{fontSize:"40px",color:"#ff5555",fontFamily:"monospace"}).setOrigin(0.5);
-    this.add.text(W/2,H/2+30,"Score: "+this.score+"\nPress SPACE to Restart",{fontSize:"20px",color:"#fff",align:"center"}).setOrigin(0.5);
-
-    this.input.keyboard.once("keydown-SPACE",()=>this.scene.restart());
-  }
-
-  update(){
-    // Scroll road
-    this.road.tilePositionY -= 5;
-
-    // Player movement
-    if(this.cursors.left.isDown) this.player.x -= 5;
-    if(this.cursors.right.isDown) this.player.x += 5;
-    if(this.cursors.up.isDown) this.player.y -= 5;
-    if(this.cursors.down.isDown) this.player.y += 5;
-
-    // Clamp inside road
-    this.player.x = Phaser.Math.Clamp(this.player.x, W/2-140, W/2+140);
-    this.player.y = Phaser.Math.Clamp(this.player.y, H-200, H-50);
-
-    // Update score
-    this.score += 1;
-    this.scoreText.setText("Score: " + this.score);
-
-    // Clean enemies offscreen
-    this.enemies.children.iterate(e=>{
-      if(e && e.y > H+100) e.destroy();
-    });
+  // lane dividers
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2;
+  for(let i=0;i<canvas.height;i+=40){
+    ctx.beginPath();
+    ctx.moveTo(laneX+roadWidth/3, i);
+    ctx.lineTo(laneX+roadWidth/3, i+20);
+    ctx.moveTo(laneX+2*roadWidth/3, i);
+    ctx.lineTo(laneX+2*roadWidth/3, i+20);
+    ctx.stroke();
   }
 }
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  width: W,
-  height: H,
-  backgroundColor: "#111",
-  physics: { default: "arcade" },
-  scene: [CarRace]
-});
+// Draw car
+function drawCar(car,color){
+  ctx.fillStyle=color;
+  ctx.fillRect(car.x,car.y,car.w,car.h);
+}
+
+// Game loop
+function update(){
+  if(gameOver){
+    ctx.fillStyle="rgba(0,0,0,0.7)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="#fff";
+    ctx.font="30px Arial";
+    ctx.fillText("GAME OVER",110,250);
+    ctx.font="20px Arial";
+    ctx.fillText("Score: "+score,150,300);
+    ctx.fillText("Press SPACE to Restart",80,350);
+    if(keys[" "]){
+      location.reload();
+    }
+    return;
+  }
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawRoad();
+
+  // Player movement
+  if(keys["ArrowLeft"] && player.x > laneX) player.x -= player.speed;
+  if(keys["ArrowRight"] && player.x < laneX+roadWidth-player.w) player.x += player.speed;
+  if(keys["ArrowUp"] && player.y > 0) player.y -= player.speed;
+  if(keys["ArrowDown"] && player.y < canvas.height-player.h) player.y += player.speed;
+
+  drawCar(player,"#00ffcc");
+
+  // Enemies
+  for(let e of enemies){
+    e.y += e.speed;
+    drawCar(e,"#ff4444");
+    // Collision check
+    if(e.x < player.x+player.w && e.x+e.w > player.x &&
+       e.y < player.y+player.h && e.y+e.h > player.y){
+      gameOver = true;
+    }
+  }
+  enemies = enemies.filter(e => e.y < canvas.height+100);
+
+  // Score
+  score++;
+  ctx.fillStyle="#fff";
+  ctx.font="20px Arial";
+  ctx.fillText("Score: "+score,20,30);
+
+  requestAnimationFrame(update);
+}
+
+update();
 </script>
 </body>
 </html>
-
