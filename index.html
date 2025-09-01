@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Arcade Car Racing</title>
+  <title>World Class Car Racing</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #111; }
-    canvas { display: block; margin: auto; background: #444; }
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; margin: auto; background: #222; }
     #score {
       position: absolute; top: 10px; left: 50%;
       transform: translateX(-50%);
@@ -31,6 +31,7 @@
   <button id="restartBtn">Restart</button>
   <button id="accelerateBtn">Accelerate</button>
   <canvas id="gameCanvas" width="400" height="600"></canvas>
+
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
@@ -38,15 +39,36 @@
     const restartBtn = document.getElementById("restartBtn");
     const accelerateBtn = document.getElementById("accelerateBtn");
 
-    let car, traffic, score, gameOver, keys, roadOffset, speed, accelerating;
+    let car, traffic, score, gameOver, keys, roadY, speed, accelerating;
+    let images = {};
+
+    // Load all images first
+    function loadImages(sources, callback) {
+      let loaded = 0;
+      let total = Object.keys(sources).length;
+      for (let key in sources) {
+        images[key] = new Image();
+        images[key].src = sources[key];
+        images[key].onload = () => {
+          loaded++;
+          if (loaded === total) callback();
+        };
+      }
+    }
+
+    const sources = {
+      road: "https://i.ibb.co/7v1JjLk/road.png",
+      player: "https://i.ibb.co/nQFR6Sd/red-car.png",
+      enemy: "https://i.ibb.co/NjFQkXz/blue-car.png"
+    };
 
     function initGame() {
-      car = { x: 170, y: 480, width: 60, height: 100, color: "red" };
+      car = { x: 170, y: 480, width: 60, height: 120 };
       traffic = [];
       score = 0;
       gameOver = false;
       keys = {};
-      roadOffset = 0;
+      roadY = 0;
       speed = 4;
       accelerating = false;
       restartBtn.style.display = "none";
@@ -63,42 +85,22 @@
     accelerateBtn.addEventListener("touchend", () => accelerating = false);
 
     function drawRoad() {
-      // Gradient asphalt
-      let grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-      grad.addColorStop(0, "#222");
-      grad.addColorStop(0.5, "#333");
-      grad.addColorStop(1, "#222");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Scrolling road stripes
-      roadOffset += speed;
-      if (roadOffset > 40) roadOffset = 0;
-
-      ctx.fillStyle = "white";
-      for (let y = -40; y < canvas.height; y += 80) {
-        ctx.fillRect(195, y + roadOffset, 10, 40);
-      }
-
-      // Side borders
-      ctx.fillRect(90, 0, 5, canvas.height);
-      ctx.fillRect(305, 0, 5, canvas.height);
+      roadY += speed;
+      if (roadY >= canvas.height) roadY = 0;
+      ctx.drawImage(images.road, 0, roadY - canvas.height, canvas.width, canvas.height);
+      ctx.drawImage(images.road, 0, roadY, canvas.width, canvas.height);
     }
 
-    function drawCar(c) {
-      ctx.fillStyle = c.color;
-      ctx.fillRect(c.x, c.y, c.width, c.height);
-
-      // windows
-      ctx.fillStyle = "black";
-      ctx.fillRect(c.x + 15, c.y + 10, 30, c.height - 20);
+    function drawCar(x, y, type="player") {
+      let img = type === "player" ? images.player : images.enemy;
+      ctx.drawImage(img, x, y, 60, 120);
     }
 
     function spawnTraffic() {
       if (Math.random() < 0.02) {
         let lane = Math.floor(Math.random() * 3);
         let x = 110 + lane * 70;
-        traffic.push({ x: x, y: -120, width: 60, height: 100, color: "blue", speed: speed });
+        traffic.push({ x: x, y: -120, width: 60, height: 120, speed: speed });
       }
     }
 
@@ -129,19 +131,18 @@
 
       // Player controls
       if (keys["ArrowLeft"] && car.x > 100) car.x -= 5;
-      if (keys["ArrowRight"] && car.x < 260) car.x += 5;
+      if (keys["ArrowRight"] && car.x < 240) car.x += 5;
 
-      // Acceleration button
-      if (accelerating) speed = 7;
-      else speed = 4;
+      // Acceleration
+      if (accelerating) speed = 7; else speed = 4;
 
-      drawCar(car);
+      drawCar(car.x, car.y, "player");
 
       spawnTraffic();
       updateTraffic();
 
       for (let t of traffic) {
-        drawCar(t);
+        drawCar(t.x, t.y, "enemy");
         if (checkCollision(car, t)) {
           gameOver = true;
         }
@@ -153,7 +154,8 @@
       requestAnimationFrame(update);
     }
 
-    initGame();
+    // Load images and then start
+    loadImages(sources, initGame);
   </script>
 </body>
 </html>
