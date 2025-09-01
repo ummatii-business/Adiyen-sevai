@@ -5,94 +5,90 @@
   <title>Car Racing Game</title>
   <style>
     body { margin: 0; overflow: hidden; background: #111; }
-    canvas { display: block; margin: auto; background: #333; }
+    canvas { display: block; margin: auto; background: #222; }
   </style>
 </head>
 <body>
 <canvas id="gameCanvas" width="400" height="600"></canvas>
 <script>
+// Setup
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-let roadWidth = 200;
-let laneX = (canvas.width - roadWidth) / 2;
-let player = { x: laneX + roadWidth/2 - 20, y: 500, w: 40, h: 80, speed: 5 };
-let enemies = [];
 let keys = {};
-let score = 0;
 let gameOver = false;
+let score = 0;
+
+// Player car
+let player = { x: 180, y: 500, w: 40, h: 80, speed: 6 };
+
+// Enemy cars
+let enemies = [];
+
+// Background road (scrolling effect)
+let roadY = 0;
+
+// Car images (Base64 encoded)
+const playerImg = new Image();
+const enemyImg = new Image();
+const roadImg = new Image();
+
+playerImg.src = "https://i.ibb.co/zxQw0d7/car-blue.png";
+enemyImg.src = "https://i.ibb.co/0KscnM8/car-red.png";
+roadImg.src = "https://i.ibb.co/gZ3gZK8/road.png";
 
 // Controls
 document.addEventListener("keydown", e => keys[e.key] = true);
 document.addEventListener("keyup", e => keys[e.key] = false);
 
-// Spawn enemy cars
+// Spawn enemies
 function spawnEnemy(){
   let lane = Math.floor(Math.random()*3);
-  let x = laneX + lane*(roadWidth/3) + 10;
-  enemies.push({x:x,y:-100,w:40,h:80,speed:4+Math.random()*3});
+  let x = 90 + lane*70;
+  enemies.push({x:x,y:-100,w:40,h:80,speed:3+Math.random()*2});
 }
 setInterval(spawnEnemy, 1500);
 
-// Draw road + lanes
+// Draw scrolling road
 function drawRoad(){
-  ctx.fillStyle = "#555";
-  ctx.fillRect(laneX,0,roadWidth,canvas.height);
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 5;
-  ctx.strokeRect(laneX,0,roadWidth,canvas.height);
-
-  // lane dividers
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
-  for(let i=0;i<canvas.height;i+=40){
-    ctx.beginPath();
-    ctx.moveTo(laneX+roadWidth/3, i);
-    ctx.lineTo(laneX+roadWidth/3, i+20);
-    ctx.moveTo(laneX+2*roadWidth/3, i);
-    ctx.lineTo(laneX+2*roadWidth/3, i+20);
-    ctx.stroke();
-  }
-}
-
-// Draw car
-function drawCar(car,color){
-  ctx.fillStyle=color;
-  ctx.fillRect(car.x,car.y,car.w,car.h);
+  roadY += 5;
+  if(roadY >= canvas.height) roadY = 0;
+  ctx.drawImage(roadImg,0,roadY-canvas.height,canvas.width,canvas.height);
+  ctx.drawImage(roadImg,0,roadY,canvas.width,canvas.height);
 }
 
 // Game loop
 function update(){
   if(gameOver){
-    ctx.fillStyle="rgba(0,0,0,0.7)";
+    ctx.fillStyle="rgba(0,0,0,0.6)";
     ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.fillStyle="#fff";
     ctx.font="30px Arial";
     ctx.fillText("GAME OVER",110,250);
     ctx.font="20px Arial";
     ctx.fillText("Score: "+score,150,300);
-    ctx.fillText("Press SPACE to Restart",80,350);
-    if(keys[" "]){
-      location.reload();
-    }
+    ctx.fillText("Press SPACE to Restart",70,350);
+    if(keys[" "]) location.reload();
     return;
   }
 
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Draw background road
   drawRoad();
 
-  // Player movement
-  if(keys["ArrowLeft"] && player.x > laneX) player.x -= player.speed;
-  if(keys["ArrowRight"] && player.x < laneX+roadWidth-player.w) player.x += player.speed;
+  // Player controls
+  if(keys["ArrowLeft"] && player.x > 60) player.x -= player.speed;
+  if(keys["ArrowRight"] && player.x < 300) player.x += player.speed;
   if(keys["ArrowUp"] && player.y > 0) player.y -= player.speed;
   if(keys["ArrowDown"] && player.y < canvas.height-player.h) player.y += player.speed;
 
-  drawCar(player,"#00ffcc");
+  // Draw player
+  ctx.drawImage(playerImg,player.x,player.y,player.w,player.h);
 
   // Enemies
   for(let e of enemies){
     e.y += e.speed;
-    drawCar(e,"#ff4444");
+    ctx.drawImage(enemyImg,e.x,e.y,e.w,e.h);
+
     // Collision check
     if(e.x < player.x+player.w && e.x+e.w > player.x &&
        e.y < player.y+player.h && e.y+e.h > player.y){
@@ -110,7 +106,8 @@ function update(){
   requestAnimationFrame(update);
 }
 
-update();
+// Wait until images load
+roadImg.onload = () => update();
 </script>
 </body>
 </html>
