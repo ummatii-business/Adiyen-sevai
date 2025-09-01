@@ -1,34 +1,108 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Simple Car Game</title>
+  <meta charset="UTF-8">
+  <title>Highway Car Racing</title>
   <style>
     body { margin: 0; overflow: hidden; background: #333; }
-    canvas { display: block; margin: auto; background: #111; }
+    canvas { display: block; margin: auto; background: #555; }
+    #score {
+      position: absolute; top: 10px; left: 50%;
+      transform: translateX(-50%);
+      color: white; font-family: Arial; font-size: 20px;
+    }
   </style>
 </head>
 <body>
+  <div id="score">Score: 0</div>
   <canvas id="gameCanvas" width="400" height="600"></canvas>
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
 
     let car = { x: 180, y: 500, width: 40, height: 80, speed: 5 };
+    let traffic = [];
     let keys = {};
+    let score = 0;
+    let gameOver = false;
 
     document.addEventListener("keydown", e => keys[e.key] = true);
     document.addEventListener("keyup", e => keys[e.key] = false);
 
-    function drawCar() {
-      ctx.fillStyle = "red";
-      ctx.fillRect(car.x, car.y, car.width, car.height);
+    function drawRoad() {
+      ctx.fillStyle = "#222";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 4;
+
+      ctx.beginPath();
+      ctx.moveTo(133, 0);
+      ctx.lineTo(133, canvas.height);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(266, 0);
+      ctx.lineTo(266, canvas.height);
+      ctx.stroke();
+    }
+
+    function drawCar(c, color="red") {
+      ctx.fillStyle = color;
+      ctx.fillRect(c.x, c.y, c.width, c.height);
+    }
+
+    function spawnTraffic() {
+      if (Math.random() < 0.02) {
+        let lane = Math.floor(Math.random() * 3);
+        let x = 50 + lane * 120;
+        traffic.push({ x: x, y: -100, width: 40, height: 80, speed: 3 });
+      }
+    }
+
+    function updateTraffic() {
+      for (let t of traffic) {
+        t.y += t.speed;
+      }
+      traffic = traffic.filter(t => t.y < canvas.height);
+    }
+
+    function checkCollision(a, b) {
+      return a.x < b.x + b.width &&
+             a.x + a.width > b.x &&
+             a.y < b.y + b.height &&
+             a.y + a.height > b.y;
     }
 
     function update() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (keys["ArrowLeft"] && car.x > 0) car.x -= car.speed;
-      if (keys["ArrowRight"] && car.x < canvas.width - car.width) car.x += car.speed;
-      drawCar();
+      if (gameOver) {
+        ctx.fillStyle = "white";
+        ctx.font = "40px Arial";
+        ctx.fillText("GAME OVER", 80, 300);
+        return;
+      }
+
+      drawRoad();
+
+      if (keys["ArrowLeft"] && car.x > 50) car.x -= car.speed;
+      if (keys["ArrowRight"] && car.x < 310) car.x += car.speed;
+
+      drawCar(car, "red");
+
+      spawnTraffic();
+      updateTraffic();
+
+      for (let t of traffic) {
+        drawCar(t, "blue");
+        if (checkCollision(car, t)) {
+          gameOver = true;
+        }
+      }
+
+      score++;
+      scoreEl.textContent = "Score: " + score;
+
       requestAnimationFrame(update);
     }
 
