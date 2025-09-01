@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>World Class Car Racing</title>
+  <title>Car Racing Game</title>
   <style>
     body { margin: 0; overflow: hidden; background: black; }
     canvas { display: block; margin: auto; background: #222; }
@@ -42,7 +42,14 @@
     let car, traffic, score, gameOver, keys, roadY, speed, accelerating;
     let images = {};
 
-    // Load all images first
+    // ✅ Use stable GitHub raw URLs
+    const sources = {
+      road: "https://raw.githubusercontent.com/lochiwei/Car-Racing-Game/master/images/road.png",
+      player: "https://raw.githubusercontent.com/lochiwei/Car-Racing-Game/master/images/car.png",
+      enemy: "https://raw.githubusercontent.com/lochiwei/Car-Racing-Game/master/images/enemy.png"
+    };
+
+    // Load images
     function loadImages(sources, callback) {
       let loaded = 0;
       let total = Object.keys(sources).length;
@@ -53,14 +60,11 @@
           loaded++;
           if (loaded === total) callback();
         };
+        images[key].onerror = () => {
+          console.error("Image failed to load:", sources[key]);
+        };
       }
     }
-
-    const sources = {
-      road: "https://i.ibb.co/7v1JjLk/road.png",
-      player: "https://i.ibb.co/nQFR6Sd/red-car.png",
-      enemy: "https://i.ibb.co/NjFQkXz/blue-car.png"
-    };
 
     function initGame() {
       car = { x: 170, y: 480, width: 60, height: 120 };
@@ -129,11 +133,9 @@
 
       drawRoad();
 
-      // Player controls
       if (keys["ArrowLeft"] && car.x > 100) car.x -= 5;
       if (keys["ArrowRight"] && car.x < 240) car.x += 5;
 
-      // Acceleration
       if (accelerating) speed = 7; else speed = 4;
 
       drawCar(car.x, car.y, "player");
@@ -154,7 +156,6 @@
       requestAnimationFrame(update);
     }
 
-    // Load images and then start
     loadImages(sources, initGame);
   </script>
 </body>
